@@ -1,0 +1,42 @@
+name: mats-tier1
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+    environment:
+      OLLAMA_KEEP_ALIVE: "30m"
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.83.7-stable
+    depends_on: [ollama]
+    ports: ["4000:4000"]
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      OLLAMA_HOST: http://ollama:11434
+    volumes: ["../config/litellm_config.yaml:/app/config.yaml:ro"]
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    restart: unless-stopped
+
+  mats-relay:
+    build: ../
+    depends_on: [litellm]
+    ports: ["8787:8787"]
+    environment:
+      LITELLM_PROXY_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      CONDUIT_SHARED_SECRET: ${CONDUIT_SHARED_SECRET}
+      MATS_LIVE: "0"
+    volumes: ["../vault:/app/vault"]
+    command: ["python", "-m", "mats.relay.fastapi_relay"]
+    restart: unless-stopped
+
+volumes:
+  ollama:

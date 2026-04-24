@@ -1,0 +1,50 @@
+{
+  "mcpServers": {
+    "mats-obsidian": {
+      "command": "/usr/bin/uvx",
+      "args": ["mcp-obsidian"],
+      "env": {
+        "OBSIDIAN_API_KEY": "REPLACE_ME",
+        "OBSIDIAN_HOST": "127.0.0.1",
+        "OBSIDIAN_PORT": "27124"
+      }
+    },
+    "mats-coinbase": {
+      "command": "/usr/bin/python3",
+      "args": ["-m", "mats.scripts.run_mcp_server", "--name", "coinbase", "--stdio"],
+      "env": {
+        "COINBASE_API_KEY": "REPLACE_ME",
+        "COINBASE_API_SECRET": "REPLACE_ME",
+        "COINBASE_SANDBOX": "1"
+      }
+    },
+    "mats-base": {
+      "command": "/usr/bin/python3",
+      "args": ["-m", "mats.scripts.run_mcp_server", "--name", "base", "--stdio"],
+      "env": {
+        "BASE_RPC_URL": "https://mainnet.base.org",
+        "BASE_WALLET_PRIVATE_KEY": "REPLACE_ME"
+      }
+    },
+    "mats-wasabi": {
+      "command": "/usr/bin/python3",
+      "args": ["-m", "mats.scripts.run_mcp_server", "--name", "wasabi", "--stdio"]
+    },
+    "mats-predictbase": {
+      "command": "/usr/bin/python3",
+      "args": ["-m", "mats.scripts.run_mcp_server", "--name", "predictbase", "--stdio"]
+    },
+    "mats-allora": {
+      "command": "/usr/bin/python3",
+      "args": ["-m", "mats.scripts.run_mcp_server", "--name", "allora", "--stdio"]
+    },
+    "mats-venice": {
+      "command": "/usr/bin/python3",
+      "args": ["-m", "mats.scripts.run_mcp_server", "--name", "venice", "--stdio"]
+    },
+    "mats-policy": {
+      "command": "/usr/bin/python3",
+      "args": ["-m", "mats.scripts.run_mcp_server", "--name", "policy", "--stdio"]
+    }
+  }
+}

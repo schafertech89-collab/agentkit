@@ -1,0 +1,109 @@
+name: mats-tier5
+
+# Tier 5: Neurocognitive Memory OS.
+# Adds Keycloak (OAuth 2.1), ToolHive (VirtualMCP + Lua routing), TEI, policy-mcp.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+  redis:
+    image: redis:7.4
+    ports: ["6379:6379"]
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--save", "60", "1"]
+  chroma:
+    image: chromadb/chroma:latest
+    ports: ["8001:8000"]
+    volumes: ["chroma:/chroma/.chroma"]
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    command: ["start-dev", "--http-port=8080"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    ports: ["8080:8080"]
+  tei-embedding:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    command: ["--model-id", "sentence-transformers/all-MiniLM-L6-v2",
+              "--port", "8090"]
+    ports: ["8090:8090"]
+  toolhive:
+    image: ghcr.io/stacklok/toolhive:2026.04.20
+    depends_on: [redis, keycloak, tei-embedding]
+    ports: ["8443:8443"]
+    environment:
+      TOOLHIVE_TOKEN: ${TOOLHIVE_TOKEN}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - "../config/virtual-mcp.yaml:/etc/toolhive/virtual-mcp.yaml:ro"
+      - "../config/routing.lua:/etc/toolhive/routing.lua:ro"
+    command: ["run", "--config", "/etc/toolhive/virtual-mcp.yaml"]
+
+  # MCP sidecars (ports 9010..9019)
+  mats-composite:
+    build: ../
+    ports: ["9010:9010"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "composite",
+              "--http", "--port", "9010"]
+  mats-coinbase:
+    build: ../
+    ports: ["9011:9011"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "coinbase",
+              "--http", "--port", "9011"]
+  mats-base:
+    build: ../
+    ports: ["9012:9012"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "base",
+              "--http", "--port", "9012"]
+  mats-wasabi:
+    build: ../
+    ports: ["9013:9013"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "wasabi",
+              "--http", "--port", "9013"]
+  mats-predictbase:
+    build: ../
+    ports: ["9014:9014"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "predictbase",
+              "--http", "--port", "9014"]
+  mats-allora:
+    build: ../
+    ports: ["9015:9015"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "allora",
+              "--http", "--port", "9015"]
+  mats-venice:
+    build: ../
+    ports: ["9016:9016"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "venice",
+              "--http", "--port", "9016"]
+  mats-scs:
+    build: ../
+    ports: ["9017:9017"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "scs",
+              "--http", "--port", "9017"]
+  mats-policy:
+    build: ../
+    ports: ["9018:9018"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "policy",
+              "--http", "--port", "9018"]
+  mats-obsidian:
+    build: ../
+    ports: ["9019:9019"]
+    command: ["python", "-m", "mats.scripts.run_mcp_server", "--name", "obsidian",
+              "--http", "--port", "9019"]
+    volumes: ["../vault:/app/vault"]
+
+  mats-orchestrator:
+    build: ../
+    depends_on: [toolhive, redis]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MATS_LIVE: "0"
+      MATS_TIER: "5"
+    volumes: ["../vault:/app/vault"]
+    command: ["python", "-m", "mats.scripts.run_orchestrator",
+              "--tier", "5", "--scs", "redis"]
+
+volumes:
+  ollama:
+  chroma:

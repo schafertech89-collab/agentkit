@@ -1,0 +1,17 @@
+.env
+.env.local
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+mats_data/
+vault/.governance/audit.jsonl
+vault/.graph/
+vault/.decay/
+vault/.consolidation/
+vault/**/*.md
+!vault/CLAUDE.md

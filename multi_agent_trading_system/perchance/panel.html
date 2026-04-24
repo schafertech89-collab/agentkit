@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  MATS Perchance HTML panel.
+  Copy this and generator.js into your Perchance generator. Wire the tunnel
+  URL and a rotating shared secret into window.localStorage on first load.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>MATS — Multi-Agent Trading System</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; background: #0f1014; color: #eee; }
+      #log { overflow-y: auto; max-height: 70vh; padding: 12px; }
+      .bubble { padding: 10px 14px; margin: 8px 0; border-radius: 10px; max-width: 85%;
+                white-space: pre-wrap; }
+      .bubble.you { background: #1b2130; margin-left: auto; }
+      .bubble.bot { background: #182418; }
+      form { display: flex; padding: 12px; border-top: 1px solid #222; }
+      input { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #333;
+              background: #0f1014; color: #eee; }
+      button { margin-left: 8px; padding: 10px 16px; border-radius: 8px; border: 0;
+               background: #4c9; color: #0f1014; font-weight: 600; cursor: pointer; }
+    </style>
+    <script type="module" src="./generator.js"></script>
+  </head>
+  <body>
+    <div id="log"></div>
+    <form onsubmit="return window.MATS.sendMessage(event)">
+      <input id="in" autocomplete="off" placeholder="scan eth markets / submit allora topic 3" />
+      <button type="submit">Send</button>
+    </form>
+    <script>
+      // On load start listening to orchestrator traces
+      document.addEventListener('DOMContentLoaded', () => window.MATS.streamEvents());
+    </script>
+  </body>
+</html>

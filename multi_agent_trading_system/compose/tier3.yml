@@ -1,0 +1,61 @@
+name: mats-tier3
+
+# Tier 3: Conduit + PARA router + Redis CA-MCP blackboard + episodic/semantic/procedural.
+# Extends tier1.yml with Chroma, Redis, and the write-isolated MCP servers.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+    restart: unless-stopped
+  redis:
+    image: redis:7.4
+    ports: ["6379:6379"]
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--save", "60", "1"]
+    restart: unless-stopped
+  chroma:
+    image: chromadb/chroma:latest
+    ports: ["8001:8000"]
+    volumes: ["chroma:/chroma/.chroma"]
+    restart: unless-stopped
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.83.7-stable
+    depends_on: [ollama]
+    ports: ["4000:4000"]
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+    volumes: ["../config/litellm_config.yaml:/app/config.yaml:ro"]
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    restart: unless-stopped
+  mats-orchestrator:
+    build: ../
+    depends_on: [redis, chroma, litellm]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      LITELLM_PROXY_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      MATS_LIVE: "0"
+      MATS_TIER: "3"
+    volumes: ["../vault:/app/vault"]
+    command: ["python", "-m", "mats.scripts.run_orchestrator", "--tier", "3",
+              "--scs", "redis"]
+    restart: unless-stopped
+  mats-relay:
+    build: ../
+    depends_on: [mats-orchestrator]
+    ports: ["8787:8787", "8788:8788"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      LITELLM_PROXY_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
+      CONDUIT_SHARED_SECRET: ${CONDUIT_SHARED_SECRET}
+    volumes: ["../vault:/app/vault"]
+    command: ["python", "-m", "mats.relay.fastapi_relay"]
+    restart: unless-stopped
+
+volumes:
+  ollama:
+  chroma:

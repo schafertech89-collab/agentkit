@@ -1,0 +1,52 @@
+# ToolHive VirtualMCPServer manifest (Tier 5).
+# Aggregates all MATS MCP servers behind a single /mcp endpoint with OAuth 2.1.
+
+apiVersion: toolhive.stacklok.com/v1
+kind: VirtualMCPServer
+metadata:
+  name: mats-virtual
+  namespace: mats
+spec:
+  listener:
+    transport: streamable-http
+    address: 127.0.0.1:8443
+    tls:
+      issuer: local
+  oauth:
+    issuer: http://127.0.0.1:8080/realms/mats
+    audience: mats-virtual
+    resource_indicators:
+      - urn:mats:virtual
+  routing:
+    engine: lua
+    script: /etc/toolhive/routing.lua
+  optimizer:
+    enabled: true
+    embedding_server: tei-embedding
+    expose: [find_tool, call_tool]
+    threshold: 0.4
+  backends:
+    - name: composite-backend
+      address: http://127.0.0.1:9010/mcp
+    - name: coinbase-backend
+      address: http://127.0.0.1:9011/mcp
+    - name: base-backend
+      address: http://127.0.0.1:9012/mcp
+    - name: wasabi-backend
+      address: http://127.0.0.1:9013/mcp
+    - name: predictbase-backend
+      address: http://127.0.0.1:9014/mcp
+    - name: allora-backend
+      address: http://127.0.0.1:9015/mcp
+    - name: venice-backend
+      address: http://127.0.0.1:9016/mcp
+    - name: scs-backend
+      address: http://127.0.0.1:9017/mcp
+    - name: policy-backend
+      address: http://127.0.0.1:9018/mcp
+    - name: obsidian-backend
+      address: http://127.0.0.1:9019/mcp
+  session:
+    storage: redis
+    address: redis://127.0.0.1:6379/0
+    hash_tag_sessions: true

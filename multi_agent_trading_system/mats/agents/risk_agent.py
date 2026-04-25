@@ -17,13 +17,19 @@ from ..analysis.risk_reward import PositionSizer, RiskReward, SizedOrder
 from .base import Agent, AgentContext, AgentOutput
 
 
-STANCE_WEIGHTS = {
-    "technical": 0.25,
-    "fundamental": 0.15,
-    "quant": 0.2,
-    "monte_carlo": 0.2,
-    "knn": 0.2,
+DEFAULT_STANCE_WEIGHTS = {
+    "technical": 0.20,
+    "fundamental": 0.10,
+    "quant": 0.15,
+    "monte_carlo": 0.15,
+    "knn": 0.15,
+    "cta_trend": 0.10,
+    "crossvenue_arb": 0.10,
+    "orderflow": 0.05,
 }
+
+# Backwards-compatible alias.
+STANCE_WEIGHTS = DEFAULT_STANCE_WEIGHTS
 
 
 class RiskAgent(Agent):
@@ -36,7 +42,13 @@ class RiskAgent(Agent):
         max_leverage = float(input_payload.get("max_leverage", 3.0))
 
         stances = await self._collect_stances(ctx, symbol)
-        fused_stance = self._fuse(stances)
+        learned_weights = await ctx.read("stance_weights", None)
+        weights = learned_weights or DEFAULT_STANCE_WEIGHTS
+        fused_stance = self._fuse(stances, weights)
+        active_option = await ctx.read("active_option", None)
+        planner_bias = await ctx.read(f"planner_bias:{symbol}", None)
+        if planner_bias is not None:
+            fused_stance = float(np.clip(0.7 * fused_stance + 0.3 * float(planner_bias), -1.0, 1.0))
 
         mc_snapshot = await ctx.read(f"mc:{symbol}", {}) or {}
         regime = await ctx.read(f"regime:{symbol}", {}) or {}
@@ -92,6 +104,8 @@ class RiskAgent(Agent):
         await ctx.append("decisions", {
             "id": decision_id, "symbol": symbol, "venue": venue,
             "stance": fused_stance, "order": order.__dict__,
+            "stances": stances, "weights": weights,
+            "active_option": active_option,
             "timestamp": ctx.clock(),
         })
 
@@ -128,6 +142,9 @@ class RiskAgent(Agent):
             ("technical", "technical_stances"),
             ("fundamental", "fundamental_stances"),
             ("quant", "quant_stances"),
+            ("cta_trend", "cta_trend_stances"),
+            ("crossvenue_arb", "crossvenue_arb_stances"),
+            ("orderflow", "orderflow_stances"),
         ]
         out: dict[str, float] = {}
         for key, scs_key in sources:
@@ -145,13 +162,14 @@ class RiskAgent(Agent):
         return out
 
     @staticmethod
-    def _fuse(stances: dict[str, float]) -> float:
+    def _fuse(stances: dict[str, float], weights: dict[str, float] | None = None) -> float:
         if not stances:
             return 0.0
+        w_map = weights or DEFAULT_STANCE_WEIGHTS
         total_w = 0.0
         weighted = 0.0
         for k, s in stances.items():
-            w = STANCE_WEIGHTS.get(k, 0.1)
+            w = float(w_map.get(k, 0.1))
             weighted += w * s
             total_w += w
         return float(np.clip(weighted / max(total_w, 1e-9), -1.0, 1.0))

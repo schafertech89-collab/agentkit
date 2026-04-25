@@ -25,15 +25,22 @@ from typing import Any
 
 from ..agents import (
     AlloraPublisherAgent,
+    CrossVenueArbAgent,
+    CTATrendAgent,
+    DynaPlannerAgent,
     ExecutionAgent,
     FundamentalAgent,
     FundamentalDataAgent,
+    HordeAgent,
     KNNRegimeAgent,
     MonteCarloAgent,
+    OptionsSelectorAgent,
+    OrderFlowAgent,
     QuantitativeAgent,
     ReflectionAgent,
     RewardSweeperAgent,
     RiskAgent,
+    TDLambdaAgent,
     TechnicalAgent,
 )
 from ..agents.base import AgentContext, AgentOutput
@@ -78,6 +85,12 @@ class OrchestratorConfig:
     vault_path: str = "./vault"
     scs_backend: str = "memory"
     scs_kwargs: dict = field(default_factory=dict)
+    # Sutton-style learning toggles. When False the orchestrator skips the
+    # learners entirely and the risk agent falls back to DEFAULT_STANCE_WEIGHTS.
+    learning_enabled: bool = True
+    enable_orderflow_agent: bool = True
+    crossvenue_pairs: list[tuple[str, list[str]]] = field(default_factory=list)
+    horde_pairings: dict[str, str] = field(default_factory=dict)
 
 
 class Orchestrator:
@@ -109,19 +122,29 @@ class Orchestrator:
         }
 
     def _build_agents(self) -> dict[str, Any]:
-        return {
+        agents: dict[str, Any] = {
             "fundamental_data": FundamentalDataAgent(hooks=self.hooks),
             "technical": TechnicalAgent(hooks=self.hooks),
             "fundamental": FundamentalAgent(hooks=self.hooks),
             "quant": QuantitativeAgent(hooks=self.hooks),
             "monte_carlo": MonteCarloAgent(hooks=self.hooks),
             "knn": KNNRegimeAgent(),
+            "cta_trend": CTATrendAgent(hooks=self.hooks),
+            "crossvenue_arb": CrossVenueArbAgent(hooks=self.hooks),
             "risk": RiskAgent(hooks=self.hooks),
             "execution": ExecutionAgent(hooks=self.hooks),
             "allora": AlloraPublisherAgent(hooks=self.hooks),
             "reflection": ReflectionAgent(hooks=self.hooks),
             "sweep": RewardSweeperAgent(hooks=self.hooks),
         }
+        if self.cfg.enable_orderflow_agent:
+            agents["orderflow"] = OrderFlowAgent(hooks=self.hooks)
+        if self.cfg.learning_enabled:
+            agents["horde"] = HordeAgent(hooks=self.hooks)
+            agents["td_lambda"] = TDLambdaAgent(hooks=self.hooks)
+            agents["options"] = OptionsSelectorAgent(hooks=self.hooks)
+            agents["dyna_planner"] = DynaPlannerAgent(hooks=self.hooks)
+        return agents
 
     # --------------------------------------------------------- loop
 
@@ -157,7 +180,7 @@ class Orchestrator:
         # 2. Analysis per symbol in parallel
         all_outputs: list[AgentOutput] = []
         for symbol, venue in self.cfg.universe:
-            outs = await asyncio.gather(
+            analysis_calls = [
                 self._run("technical", ctx, {"symbol": symbol, "venue": venue}),
                 self._run("fundamental", ctx, {"symbol": symbol}),
                 self._run("quant", ctx, {"symbol": symbol, "venue": venue,
@@ -165,9 +188,31 @@ class Orchestrator:
                 self._run("monte_carlo", ctx, {"symbol": symbol, "venue": venue,
                                                 "horizon_days": 1.0, "target_return": 0.01}),
                 self._run("knn", ctx, {"symbol": symbol, "venue": venue}),
-            )
+                self._run("cta_trend", ctx, {"symbol": symbol, "venue": venue}),
+                self._run("crossvenue_arb", ctx, {
+                    "symbol": symbol,
+                    "venues": self._venues_for(symbol),
+                }),
+            ]
+            if "orderflow" in self._agents:
+                analysis_calls.append(
+                    self._run("orderflow", ctx, {"symbol": symbol, "venue": venue}),
+                )
+            outs = await asyncio.gather(*analysis_calls)
             all_outputs.extend(outs)
-            # 3. Risk / sizing (runs after analysis finishes)
+
+            # 3. Sutton-style learners (only when enabled): horde -> TD(λ) -> options -> planner
+            if self.cfg.learning_enabled:
+                horde_out = await self._run("horde", ctx, {
+                    "symbol": symbol, "venue": venue,
+                    "paired_symbol": self.cfg.horde_pairings.get(symbol),
+                })
+                td_out = await self._run("td_lambda", ctx, {"symbol": symbol})
+                opt_out = await self._run("options", ctx, {"symbol": symbol})
+                planner_out = await self._run("dyna_planner", ctx, {"symbol": symbol})
+                all_outputs.extend([horde_out, td_out, opt_out, planner_out])
+
+            # 4. Risk / sizing (runs after analysis + learners finish)
             risk_out = await self._run("risk", ctx, {
                 "symbol": symbol, "venue": venue,
                 "account_equity": self.cfg.account_equity,
@@ -215,6 +260,14 @@ class Orchestrator:
         return summary
 
     # --------------------------------------------------------- plumbing
+
+    def _venues_for(self, symbol: str) -> list[str]:
+        """Look up the venues that carry ``symbol`` for cross-venue arb fan-out."""
+        for sym, venues in self.cfg.crossvenue_pairs:
+            if sym == symbol:
+                return list(venues)
+        # Fallback: every venue that exposes ``ticker``.
+        return [name for name, c in self.connectors.items() if hasattr(c, "ticker")]
 
     async def _run(self, agent_key: str, ctx: AgentContext, payload: dict[str, Any]) -> AgentOutput:
         agent = self._agents[agent_key]
